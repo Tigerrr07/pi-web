@@ -54,6 +54,7 @@ import {
 import { focusIfLost } from "@/lib/stacked-dialog";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { useSessionUiState } from "@/hooks/useSessionUiState";
 import { DirectoryPicker } from "./DirectoryPicker";
@@ -238,6 +239,11 @@ interface ValidatedProject {
 }
 
 type SessionRow = Extract<SidebarRow, { kind: "session" }>;
+
+const SESSION_PANE_DEFAULT_HEIGHT = 320;
+const SESSION_PANE_MIN_HEIGHT = 80;
+const EXPLORER_PANE_MIN_HEIGHT = 120;
+const SESSION_PANE_MAX_HEIGHT = 1600;
 
 /** The one popup menu of the sidebar; kept here, above the virtualized rows. */
 type SidebarMenuState =
@@ -445,6 +451,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sessionsPanelRef = useRef<HTMLDivElement>(null);
   const filesPanelRef = useRef<HTMLDivElement>(null);
   const panelScrollTopsRef = useRef(new WeakMap<Element, number>());
+  const filesHeadRef = useRef<HTMLDivElement>(null);
+  const sessionPaneHeightRef = useRef(SESSION_PANE_DEFAULT_HEIGHT);
+  const getMaxSessionPaneHeight = useCallback(() => {
+    const panelHeight = filesPanelRef.current?.clientHeight ?? 0;
+    const headHeight = filesHeadRef.current?.clientHeight ?? 0;
+    return panelHeight > 0
+      ? Math.max(SESSION_PANE_MIN_HEIGHT, panelHeight - headHeight - EXPLORER_PANE_MIN_HEIGHT)
+      : SESSION_PANE_MAX_HEIGHT;
+  }, []);
+  const sessionPaneResizer = useResizablePanel({
+    ariaLabel: t("layout.resizeFilePanel"),
+    axis: "vertical",
+    cssVariable: "--sidebar-session-pane-height",
+    defaultWidth: SESSION_PANE_DEFAULT_HEIGHT,
+    getMaxWidth: getMaxSessionPaneHeight,
+    growthDirection: "down",
+    maxWidth: SESSION_PANE_MAX_HEIGHT,
+    minWidth: SESSION_PANE_MIN_HEIGHT,
+    storageKey: "pi-web:sidebar-files-session-pane-height",
+    widthRef: sessionPaneHeightRef,
+  });
   // Project groups: explicit expand/collapse choices, how many families "show
   // more" has revealed per group (SHOW_MORE_STEP a click), the pinned section,
   // the archive view.
@@ -1207,6 +1234,30 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     () => new Map(model.projects.map((project) => [project.key, project])),
     [model.projects],
   );
+  const filesSessionRows = useMemo<SidebarRow[]>(() => {
+    if (!currentProjectKey) return [];
+    const project = projectByKey.get(currentProjectKey);
+    if (!project) return [];
+    return sessionFamilies
+      .filter((family) => workspaceKeyOf(family.root) === currentProjectKey && !isFamilyArchived(family, uiState, runningSessionIds))
+      .map((family) => {
+        const ids = familyIds(family);
+        return {
+          kind: "session" as const,
+          key: `session:group:${family.root.id}`,
+          family,
+          context: "group" as const,
+          project,
+          status: {
+            running: ids.some((id) => runningSessionIds.has(id)),
+            unread: ids.some((id) => unreadSessionIds.has(id)),
+            selected: selectedSessionId !== null && ids.includes(selectedSessionId),
+            transient: family.root.transient === true,
+          },
+          archivedAt: null,
+        };
+      });
+  }, [currentProjectKey, projectByKey, sessionFamilies, uiState, runningSessionIds, unreadSessionIds, selectedSessionId]);
 
   // The project order is saved as projects turn up: a project without a place
   // renders at the top of its band, and saving it puts it at the top of the
@@ -1288,11 +1339,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // A family's row where the tree shows it now (pinned, in its group, or in
   // the open archive view), else the selected tab.
   const familyRowButton = useCallback((rootId: string): HTMLElement | null => {
-    const panel = sessionsPanelRef.current;
-    for (const context of ["pinned", "group", "archive"]) {
-      const key = CSS.escape(`session:${context}:${rootId}`);
-      const button = panel?.querySelector<HTMLElement>(`[data-row-key="${key}"] .session-tree-main`);
-      if (button && button.getClientRects().length > 0) return button;
+    for (const panel of [sessionsPanelRef.current, filesPanelRef.current]) {
+      for (const context of ["pinned", "group", "archive"]) {
+        const key = CSS.escape(`session:${context}:${rootId}`);
+        const button = panel?.querySelector<HTMLElement>(`[data-row-key="${key}"] .session-tree-main`);
+        if (button && button.getClientRects().length > 0) return button;
+      }
     }
     return selectedTabButton();
   }, [selectedTabButton]);
@@ -2156,7 +2208,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         {/* One head: the folder in use, then what is done with it. The
             buttons are the head's, not the picker's: its group names only
             the project and worktree. */}
-        <div className="sidebar-files-head">
+        <div ref={filesHeadRef} className="sidebar-files-head">
           {/* The project and worktree in use: the same picker as the bar above a
               fresh composer, as two boxes. Its worktree box shows only at the
               top of a git checkout (repo subdirs keep their own project
@@ -2250,31 +2302,49 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           )}
         </div>
 
-        {explorerCwd && fileManagerErrorMessage && (
-          <div role="alert" className="sidebar-files-error">
-            <span className="sidebar-files-error-text">{fileManagerErrorMessage}</span>
-            <DismissButton onClick={() => setFileManagerError(null)} title={t("files.dismissError")} />
-          </div>
-        )}
-        {/* Mounted whenever there is a cwd, also while the tab is hidden, so the
-            expanded tree, a search and an upload in progress survive a switch. */}
-        <div ref={explorerScrollRef} className="sidebar-files-scroll scrollbar-subtle">
-          {explorerCwd && (
-            <FileExplorer
-              ref={fileExplorerRef}
-              cwd={explorerCwd}
-              onOpenFile={onOpenFile ?? (() => {})}
-              refreshKey={explorerKey}
-              onAtMention={onAtMention}
-              onAtMentions={onAtMentions}
-              onUploadBusyChange={setExplorerUploadBusy}
-              changesCollapsed={changesCollapsed}
-              onChangesCountChange={setChangesCount}
-              fileSearchOpen={fileSearchOpen}
-              onFileSearchOpenChange={setFileSearchOpen}
-              showHidden={showIgnoredFiles}
-            />
+        {/* The pre-split sidebar's current-project sessions, kept inside Files. */}
+        <section ref={sessionPaneResizer.panelRef} className="sidebar-files-sessions" aria-label={t("sidebar.tabSessions")}>
+          <SessionTree
+            {...treeProps}
+            rows={filesSessionRows}
+            emptyLabel={t("sidebar.noSessions")}
+          />
+        </section>
+
+        <div
+          className={`sidebar-section-resize-handle${sessionPaneResizer.isResizing ? " is-resizing" : ""}`}
+          data-resize-handle="sidebar-sessions-files"
+          title={`${t("layout.resizeFilePanel")}: ${t("layout.resizeHint")}`}
+          {...sessionPaneResizer.separatorProps}
+        />
+
+        <div className="sidebar-files-browser">
+          {explorerCwd && fileManagerErrorMessage && (
+            <div role="alert" className="sidebar-files-error">
+              <span className="sidebar-files-error-text">{fileManagerErrorMessage}</span>
+              <DismissButton onClick={() => setFileManagerError(null)} title={t("files.dismissError")} />
+            </div>
           )}
+          {/* Mounted whenever there is a cwd, also while the tab is hidden, so the
+              expanded tree, a search and an upload in progress survive a switch. */}
+          <div ref={explorerScrollRef} className="sidebar-files-scroll scrollbar-subtle">
+            {explorerCwd && (
+              <FileExplorer
+                ref={fileExplorerRef}
+                cwd={explorerCwd}
+                onOpenFile={onOpenFile ?? (() => {})}
+                refreshKey={explorerKey}
+                onAtMention={onAtMention}
+                onAtMentions={onAtMentions}
+                onUploadBusyChange={setExplorerUploadBusy}
+                changesCollapsed={changesCollapsed}
+                onChangesCountChange={setChangesCount}
+                fileSearchOpen={fileSearchOpen}
+                onFileSearchOpenChange={setFileSearchOpen}
+                showHidden={showIgnoredFiles}
+              />
+            )}
+          </div>
         </div>
       </div>
 

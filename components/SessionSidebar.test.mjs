@@ -157,12 +157,14 @@ test("sessions and files are two tabs of one sidebar, both kept mounted", () => 
   assert.match(filesTab, /tabindex="-1"/);
   assert.doesNotMatch(openingTag(html, "session-sidebar-panel-sessions"), /hidden/);
   assert.match(openingTag(html, "session-sidebar-panel-files"), /role="tabpanel"[^>]*hidden=""/);
-  // The hidden files tab still holds the explorer for the cwd, under the
-  // head with the picker and its buttons (no title row).
+  // The hidden files tab keeps the old current-project session pane above
+  // the explorer, separated by a keyboard-accessible resizer.
   const filesPanel = html.slice(html.indexOf('id="session-sidebar-panel-files"'));
   assert.match(filesPanel, /^id="session-sidebar-panel-files"[^>]*><div class="sidebar-files-head"><div class="project-picker is-stacked" role="group"/);
   assert.match(filesPanel, /aria-label="Open workspace terminal"/);
-  assert.match(filesPanel, /<div class="sidebar-files-scroll scrollbar-subtle">/);
+  assert.match(filesPanel, /<section class="sidebar-files-sessions" aria-label="Sessions">[\s\S]*?<div class="sidebar-section-resize-handle"/);
+  assert.match(filesPanel, /data-resize-handle="sidebar-sessions-files"[^>]*role="separator"/);
+  assert.match(filesPanel, /<div class="sidebar-files-browser"><div class="sidebar-files-scroll scrollbar-subtle">/);
   assert.doesNotMatch(filesPanel, /sidebar-files-toolbar|sidebar-files-title/);
   // Pins and archive not loaded yet: the tree waits instead of flashing archived rows.
   assert.match(html, /<div class="session-tree-message">Loading\.\.\.<\/div>/);
@@ -174,9 +176,13 @@ test("sessions and files are two tabs of one sidebar, both kept mounted", () => 
   // display: none may drop scroll positions: they are noted and put back.
   assert.equal((source.match(/onScrollCapture=\{rememberScroll\}/g) ?? []).length, 2);
   assert.match(source, /if \(saved !== undefined && element\.scrollTop !== saved\) element\.scrollTop = saved;\s*\}\s*\}, \[sidebarTab, archiveView\]\);/);
-  // No vertical sessions/explorer split any more.
-  assert.doesNotMatch(source, /useResizablePanel|axis: "vertical"|--sidebar-session-pane-height|explorerOpen|file-explorer-state|data-resize-handle/);
-  assert.doesNotMatch(globalStyles, /sidebar-section-resize-handle/);
+  // The Files tab restores the vertical explorer/session split without the
+  // removed explorer-open state from the old sidebar.
+  assert.match(source, /useResizablePanel\(\{[\s\S]*?axis: "vertical"[\s\S]*?--sidebar-session-pane-height/);
+  assert.doesNotMatch(source, /explorerOpen|file-explorer-state/);
+  assert.match(sidebarStyles, /\.sidebar-section-resize-handle/);
+  // Its list is scoped to the active workspace and excludes archived families.
+  assert.match(source, /workspaceKeyOf\(family\.root\) === currentProjectKey && !isFamilyArchived\(family, uiState, runningSessionIds\)/);
 });
 
 test("the files tab's head holds the picker and its six buttons, always the same ones in the same places", () => {
@@ -234,7 +240,7 @@ test("the files tab's head holds the picker and its six buttons, always the same
   // sidebar's 180px minimum (160px inside the head's padding) all six fit:
   // six 21px keys and five 6px gaps.
   assert.match(sidebarStyles, /\.sidebar-files-head \{\s*display: flex;\s*flex: none;\s*flex-direction: column;\s*padding: 10px 10px 4px;\s*border-bottom: 1px solid var\(--border\);\s*\}/);
-  assert.match(source, /<div className="sidebar-files-head">/);
+  assert.match(source, /<div ref=\{filesHeadRef\} className="sidebar-files-head">/);
   assert.doesNotMatch(source, /explorerScrolled|is-scrolled/);
   assert.doesNotMatch(sidebarStyles, /sidebar-files-card|sidebar-files-actions::before|sidebar-tabs\.is-files|sidebar-icon-button|is-scrolled/);
   assert.match(sidebarStyles, /\.sidebar-files-actions \{\s*display: flex;\s*align-items: center;\s*gap: 6px;\s*margin-top: 4px;\s*\}/);
@@ -660,8 +666,9 @@ test("focus that went away with the archive view, a toast or a delete confirmati
   assert.match(callbackBody("restoreFamily"), /focusAfterCommit\(\(\) => familyRowButton\(family\.root\.id\)\);/);
   assert.match(source, /onDeleteCancel: \(\) => \{\s*const rootId = confirmDeleteRootId;\s*setConfirmDeleteRootId\(null\);[\s\S]*?if \(rootId\) focusAfterCommit\(\(\) => familyRowButton\(rootId\)\);/);
   const rowButton = callbackBody("familyRowButton");
+  assert.match(rowButton, /for \(const panel of \[sessionsPanelRef\.current, filesPanelRef\.current\]\)/);
   assert.match(rowButton, /for \(const context of \["pinned", "group", "archive"\]\)/);
-  assert.match(rowButton, /\.session-tree-main`\);\s*if \(button && button\.getClientRects\(\)\.length > 0\) return button;\s*\}\s*return selectedTabButton\(\);/);
+  assert.match(rowButton, /\.session-tree-main`\);\s*if \(button && button\.getClientRects\(\)\.length > 0\) return button;[\s\S]*?return selectedTabButton\(\);/);
   // The toast's View opens the archive, whose Back then takes focus.
   assert.match(callbackBody("archiveFamilies"), /\{ id: "view", label: t\("sidebar\.viewArchive"\), onClick: openArchiveView \}/);
 });
