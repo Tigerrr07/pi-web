@@ -1,6 +1,23 @@
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { Tab } from "./TabBar";
 
+export interface FileWorkspaceState {
+  tabs: Tab[];
+  activeTabId: string | null;
+  open: boolean;
+}
+
+export function switchFileWorkspace(
+  states: Map<string, FileWorkspaceState>,
+  currentKey: string | null,
+  nextKey: string,
+  current: FileWorkspaceState,
+): FileWorkspaceState {
+  if (currentKey === nextKey) return current;
+  if (currentKey) states.set(currentKey, current);
+  return states.get(nextKey) ?? { tabs: [], activeTabId: null, open: false };
+}
+
 interface OpenFileTabInput {
   fileName: string;
   filePath: string;
@@ -62,6 +79,21 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
     if (bumpRevision) next.viewerRevision = (tab.viewerRevision ?? 0) + 1;
     return next;
   });
+}
+
+export function saveWorkspaceFileViewerState(
+  states: Map<string, FileWorkspaceState>,
+  tabId: string,
+  viewerRevision: number,
+  viewerState: FileViewerState,
+): void {
+  for (const [key, workspace] of states) {
+    const tabs = saveFileViewerState(workspace.tabs, tabId, viewerRevision, viewerState);
+    if (tabs !== workspace.tabs) {
+      states.set(key, { ...workspace, tabs });
+      return;
+    }
+  }
 }
 
 export function saveFileViewerState(
