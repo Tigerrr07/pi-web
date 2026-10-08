@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { openFileTab, saveFileViewerState } from "./file-tab-state.ts";
+import { openFileTab, saveFileViewerState, saveWorkspaceFileViewerState, switchFileWorkspace } from "./file-tab-state.ts";
 
 const tabA = {
   id: "file:/repo/a.ts",
@@ -28,6 +28,23 @@ const openA = {
   filePath: "/repo/a.ts",
   tabId: "file:/repo/a.ts",
 };
+
+test("file tabs are parked and restored per workspace", () => {
+  const states = new Map();
+  const projectA = { tabs: [tabA], activeTabId: tabA.id, open: true };
+  const projectB = switchFileWorkspace(states, "project-a", "project-b", projectA);
+
+  assert.deepEqual(projectB, { tabs: [], activeTabId: null, open: false });
+  const previewState = { ...tabA.viewerState, displayMode: "preview" };
+  saveWorkspaceFileViewerState(states, tabA.id, 0, previewState);
+  const restored = switchFileWorkspace(states, "project-b", "project-a", {
+    tabs: [tabB],
+    activeTabId: tabB.id,
+    open: false,
+  });
+  assert.deepEqual(restored.tabs[0].viewerState, previewState);
+  assert.deepEqual(states.get("project-b")?.tabs, [tabB]);
+});
 
 test("saving viewer state updates only the matching revision", () => {
   const tabs = [tabA, tabB];
