@@ -7,15 +7,27 @@ export interface FileWorkspaceState {
   open: boolean;
 }
 
+// A parked workspace keeps the generation its tabs were live in: the viewer
+// that unmounts after the switch reports under it, so its state lands in these
+// tabs even when the workspace switched to has the same file open.
+export interface ParkedFileWorkspace extends FileWorkspaceState {
+  generation: number;
+}
+
 export function switchFileWorkspace(
-  states: Map<string, FileWorkspaceState>,
+  states: Map<string, ParkedFileWorkspace>,
   currentKey: string | null,
   nextKey: string,
   current: FileWorkspaceState,
+  generation: number,
 ): FileWorkspaceState {
   if (currentKey === nextKey) return current;
-  if (currentKey) states.set(currentKey, current);
-  return states.get(nextKey) ?? { tabs: [], activeTabId: null, open: false };
+  if (currentKey) states.set(currentKey, { ...current, generation });
+  const parked = states.get(nextKey);
+  if (!parked) return { tabs: [], activeTabId: null, open: false };
+  // Live tabs are never parked: the map holds only the workspaces left.
+  states.delete(nextKey);
+  return { tabs: parked.tabs, activeTabId: parked.activeTabId, open: parked.open };
 }
 
 interface OpenFileTabInput {
@@ -81,18 +93,17 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
   });
 }
 
-export function saveWorkspaceFileViewerState(
-  states: Map<string, FileWorkspaceState>,
+export function saveParkedFileViewerState(
+  states: Map<string, ParkedFileWorkspace>,
+  generation: number,
   tabId: string,
   viewerRevision: number,
   viewerState: FileViewerState,
 ): void {
   for (const [key, workspace] of states) {
-    const tabs = saveFileViewerState(workspace.tabs, tabId, viewerRevision, viewerState);
-    if (tabs !== workspace.tabs) {
-      states.set(key, { ...workspace, tabs });
-      return;
-    }
+    if (workspace.generation !== generation) continue;
+    states.set(key, { ...workspace, tabs: saveFileViewerState(workspace.tabs, tabId, viewerRevision, viewerState) });
+    return;
   }
 }
 
