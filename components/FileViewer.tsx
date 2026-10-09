@@ -12,6 +12,7 @@ import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
   DOCX_PREVIEW_MAX_BYTES,
+  HTML_PREVIEW_MAX_BYTES,
   getFileExt,
   isAudioPath,
   isDocumentPreviewPath,
@@ -1185,6 +1186,8 @@ function TextFileViewer({
   });
   const onStateChangeRef = useRef(onStateChange);
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
+  // Whole file for an HTML preview whose source view is still chunked.
+  const [htmlFull, setHtmlFull] = useState<{ text?: string; error?: string } | null>(null);
 
   onStateChangeRef.current = onStateChange;
 
@@ -1346,13 +1349,38 @@ function TextFileViewer({
     // explicit mode hint always wins over this default.
     if (
       defaultPreviewEligibleRef.current
-      && !data?.truncated
-      && (data?.language === "markdown" || data?.language === "html")
+      && data
+      && (
+        (data.language === "markdown" && !data.truncated)
+        || (data.language === "html" && (!data.truncated || data.size <= HTML_PREVIEW_MAX_BYTES))
+      )
     ) {
       defaultPreviewEligibleRef.current = false;
       updateDisplayMode("preview");
     }
-  }, [data?.language, data?.truncated, updateDisplayMode]);
+  }, [data, updateDisplayMode]);
+
+  // Large HTML: the source view loads 256 KB chunks, but a half document cannot
+  // render, so the preview fetches the whole file once. A new `data` (watch
+  // change, reload) refetches it.
+  const needsHtmlFull = displayMode === "preview"
+    && data?.language === "html"
+    && data.truncated
+    && data.size <= HTML_PREVIEW_MAX_BYTES;
+  useEffect(() => {
+    setHtmlFull(null);
+    if (!needsHtmlFull) return;
+    const controller = new AbortController();
+    fetch(getFileApiUrl(filePath, "download", sourceSessionId), { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        setHtmlFull({ text: await r.text() });
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setHtmlFull({ error: String(e) });
+      });
+    return () => controller.abort();
+  }, [needsHtmlFull, data, filePath, sourceSessionId]);
 
   const hasGitDiff = gitDiff?.supported === true && typeof gitDiff.patch === "string";
   const isDeletedDiff = hasGitDiff && gitDiff.status === "deleted";
@@ -1385,7 +1413,9 @@ function TextFileViewer({
   const language = data?.language ?? "text";
   const isHtml = language === "html";
   const isMarkdown = language === "markdown";
-  const hasPreview = !data?.truncated && (isHtml || isMarkdown);
+  const hasPreview = isHtml
+    ? !!data && (!data.truncated || data.size <= HTML_PREVIEW_MAX_BYTES)
+    : isMarkdown && !data?.truncated;
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
   const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
     && !(effectiveDisplayMode === "diff" && hasGitDiff)
@@ -1721,9 +1751,13 @@ function TextFileViewer({
       >
         {effectiveDisplayMode === "diff" && hasGitDiff ? (
           <DiffView patch={gitDiff.patch!} />
+        ) : isHtml && effectiveDisplayMode === "preview" && data?.truncated && !htmlFull?.text ? (
+          <div style={{ padding: 24, color: "var(--text-dim)", fontSize: 12 }}>
+            {htmlFull?.error ?? t("i18n.loading")}
+          </div>
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
-            srcDoc={content}
+            srcDoc={data?.truncated ? htmlFull?.text : content}
             sandbox="allow-scripts"
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
              title={t("i18n.htmlPreview")}

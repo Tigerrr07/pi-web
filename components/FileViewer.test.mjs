@@ -91,3 +91,17 @@ test("markdown preview links carry PDF page fragments", () => {
   assert.match(source, /parsePdfPageFragment/);
   assert.match(source, /onOpenFile\(linkedFile, parsePdfPageFragment\(href\) \?\? undefined\)/);
 });
+
+test("partly loaded HTML previews up to the HTML cap; partly loaded markdown does not", () => {
+  const start = source.indexOf("  const hasPreview = ");
+  const statement = source.slice(start, source.indexOf(";\n", start) + 1);
+  const hasPreview = new Function("data", "isHtml", "isMarkdown", "HTML_PREVIEW_MAX_BYTES", `${statement}\nreturn hasPreview;`);
+  const cap = 10 * 1024 * 1024;
+  const partial = { truncated: true, size: 900 * 1024 };
+
+  assert.equal(hasPreview(partial, true, false, cap), true);
+  assert.equal(hasPreview({ ...partial, size: cap + 1 }, true, false, cap), false);
+  assert.equal(hasPreview({ truncated: false, size: cap + 1 }, true, false, cap), true);
+  assert.equal(hasPreview(partial, false, true, cap), false);
+  assert.match(source, /srcDoc=\{data\?\.truncated \? htmlFull\?\.text : content\}/);
+});
