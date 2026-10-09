@@ -1346,8 +1346,7 @@ function TextFileViewer({
     // explicit mode hint always wins over this default.
     if (
       defaultPreviewEligibleRef.current
-      && !data?.truncated
-      && (data?.language === "markdown" || data?.language === "html")
+      && (data?.language === "html" || (data?.language === "markdown" && !data.truncated))
     ) {
       defaultPreviewEligibleRef.current = false;
       updateDisplayMode("preview");
@@ -1385,7 +1384,10 @@ function TextFileViewer({
   const language = data?.language ?? "text";
   const isHtml = language === "html";
   const isMarkdown = language === "markdown";
-  const hasPreview = !data?.truncated && (isHtml || isMarkdown);
+  const hasPreview = isHtml || (!data?.truncated && isMarkdown);
+  const htmlPreviewUrl = isHtml
+    ? getFileApiUrl(filePath, "preview", sourceSessionId, { v: contentRequestRef.current })
+    : "";
   const effectiveDisplayMode = isDeletedDiff ? "diff" : displayMode;
   const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
     && !(effectiveDisplayMode === "diff" && hasGitDiff)
@@ -1551,7 +1553,6 @@ function TextFileViewer({
 
   if (!data && !isDeletedDiff) return null;
 
-  const content = viewerContent;
   const markdownDirectory = getFileDirectory(filePath);
   const lines = sourceLines;
   const displayModes: DisplayMode[] = isDeletedDiff
@@ -1723,10 +1724,11 @@ function TextFileViewer({
           <DiffView patch={gitDiff.patch!} />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe
-            srcDoc={content}
+            key={htmlPreviewUrl}
+            src={htmlPreviewUrl}
             sandbox="allow-scripts"
             style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
-             title={t("i18n.htmlPreview")}
+            title={t("i18n.htmlPreview")}
           />
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
           <div

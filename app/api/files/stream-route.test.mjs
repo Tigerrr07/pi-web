@@ -14,12 +14,17 @@ test("streamed responses are not content-type sniffable", () => {
 });
 
 test("inline SVG is served with a script-blocking content security policy", () => {
-  // SVG is the only inline preview type a browser executes as a document, so
-  // it must never be able to run script in the Pi Web origin.
   assert.match(streamBlock, /contentType === "image\/svg\+xml"/);
   assert.match(streamBlock, /Content-Security-Policy/);
   assert.match(streamBlock, /default-src 'none'/);
   assert.match(streamBlock, /style-src 'unsafe-inline'/);
+  assert.match(streamBlock, /frame-ancestors 'self'/);
+});
+
+test("HTML previews run scripts in an opaque sandbox", () => {
+  assert.match(streamBlock, /contentType\.startsWith\("text\/html"\)/);
+  assert.match(streamBlock, /sandbox allow-scripts/);
+  assert.match(streamBlock, /form-action 'none'/);
   assert.match(streamBlock, /frame-ancestors 'self'/);
 });
 

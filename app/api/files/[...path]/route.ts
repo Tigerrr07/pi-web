@@ -316,14 +316,18 @@ function streamFile(filePath: string, stat: fs.Stats, contentType: string, range
     "Content-Disposition": getContentDisposition(filePath, asDownload),
     "X-Content-Type-Options": "nosniff",
   };
-  // SVG is the only preview type a browser executes as a document. A
-  // repo-controlled SVG navigated to directly (for example through a link in
-  // a transcript) would otherwise run script in the Pi Web origin, where it
-  // can call any /api route. These headers only affect document rendering;
-  // <img> preview embedding ignores them.
+  // Repo-controlled documents must not run in the Pi Web origin when opened
+  // directly. These SVG headers only affect document rendering; <img>
+  // embedding ignores them. HTML gets an executable but opaque sandbox below.
   if (contentType === "image/svg+xml") {
     headers["Content-Security-Policy"] =
       "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+    headers["Referrer-Policy"] = "no-referrer";
+  } else if (contentType.startsWith("text/html")) {
+    // The preview may run report scripts, but it must never share Pi Web's
+    // origin or submit forms when this endpoint is opened directly.
+    headers["Content-Security-Policy"] =
+      "sandbox allow-scripts; base-uri 'self'; form-action 'none'; frame-ancestors 'self'";
     headers["Referrer-Policy"] = "no-referrer";
   }
 
@@ -549,7 +553,11 @@ export async function GET(
       if (!stat?.isFile()) {
         return NextResponse.json({ error: "Not a file" }, { status: 400 });
       }
-      if (getFileExt(filePath) !== "docx") {
+      const ext = getFileExt(filePath);
+      if (ext === "html" || ext === "htm") {
+        return streamFile(filePath, stat, "text/html; charset=utf-8", request.headers.get("range"));
+      }
+      if (ext !== "docx") {
         return NextResponse.json({ error: "Preview not available for this file type" }, { status: 400 });
       }
       if (stat.size > DOCX_PREVIEW_MAX_BYTES) {

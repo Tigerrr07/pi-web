@@ -79,6 +79,13 @@ test("lightweight source rows are skipped for highlighted, diff, and preview vie
   assert.equal(render(large, "source", false, false, true)[0].props.children[1].props.style.whiteSpace, "pre-wrap");
 });
 
+test("HTML preview streams the complete file instead of rendering a truncated source chunk", () => {
+  assert.match(source, /const hasPreview = isHtml \|\| \(!data\?\.truncated && isMarkdown\)/);
+  assert.match(source, /getFileApiUrl\(filePath, "preview", sourceSessionId/);
+  assert.match(source, /src=\{htmlPreviewUrl\}/);
+  assert.doesNotMatch(source, /srcDoc=\{content\}/);
+});
+
 test("markdown preview links carry PDF page fragments", () => {
   assert.match(source, /parsePdfPageFragment/);
   assert.match(source, /onOpenFile\(linkedFile, parsePdfPageFragment\(href\) \?\? undefined\)/);
