@@ -4,7 +4,7 @@ import { createContext, memo, useContext, useMemo, type ComponentProps, type Mou
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
-import { markdownAppUrlTransform, markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, markdownUserRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
+import { isFilePathText, markdownAppUrlTransform, markdownFileRemarkPlugins, markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, markdownUserFileRemarkPlugins, markdownUserRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
 import { splitMarkdownBlocks } from "@/lib/markdown-blocks";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
@@ -77,7 +77,9 @@ export const MarkdownBody = memo(function MarkdownBody({ children, className, is
   );
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
-    code({ className, children, ...props }) {
+    code: function Code({ className, children, ...props }) {
+      const insideLink = useContext(MarkdownLinkContext);
+      delete props.node;
       const lang = className?.replace("language-", "").toLowerCase() ?? "";
       const raw = String(children);
       const isBlock = className?.includes("language-") || raw.includes("\n");
@@ -93,14 +95,15 @@ export const MarkdownBody = memo(function MarkdownBody({ children, className, is
         }
         return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} isStreaming={isStreaming} />;
       }
-      return (
-        <code
-          className="markdown-inline-code"
-          {...props}
-        >
-          {children}
-        </code>
+      const filePath = onOpenFile && !insideLink && isFilePathText(raw) ? resolveLocalFileHref(raw, cwd) : null;
+      if (filePath && onOpenFile) return (
+        <a href={raw} onClick={(event) => {
+          if (!shouldOpenLocalFileInApp(event)) return;
+          event.preventDefault();
+          onOpenFile(filePath);
+        }}><code className="markdown-inline-code" {...props}>{children}</code></a>
       );
+      return <code className="markdown-inline-code" {...props}>{children}</code>;
     },
     pre({ children }) {
       return <>{children}</>;
@@ -161,7 +164,9 @@ export const MarkdownBody = memo(function MarkdownBody({ children, className, is
         <MarkdownBlock
           key={index}
           markdown={block}
-          remarkPlugins={keepLineBreaks ? markdownUserRemarkPlugins : markdownRemarkPlugins}
+          remarkPlugins={keepLineBreaks
+            ? (onOpenFile ? markdownUserFileRemarkPlugins : markdownUserRemarkPlugins)
+            : (onOpenFile ? markdownFileRemarkPlugins : markdownRemarkPlugins)}
           urlTransform={onOpenFile ? markdownUrlTransform : markdownAppUrlTransform}
           components={components}
         />

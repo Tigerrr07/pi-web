@@ -528,6 +528,50 @@ const remarkCurrencySafeMath: Plugin = function () {
   }
 };
 
+// Link file-looking text only in the chat, not in previews or code fences.
+// The file API still decides whether a clicked path is readable.
+// Require a boundary before a candidate: retrying at every character of a long
+// non-path word makes the optional directory segments quadratic while streaming.
+const filePathPattern = /(^|[\s<>"'`()\[\]{},;:!?@，。！？；：、])((?:[A-Za-z]:[\\/]|\.\.?[\\/]|\/(?!\/))?(?:[^\s/\\<>"'`()\[\]{},;:!?@，。！？；：、]+[\\/])*[^\s/\\<>"'`()\[\]{},;:!?@，。！？；：、]+\.[A-Za-z][A-Za-z0-9_-]*(?::\d+(?::\d+)?)?|(?:[A-Za-z]:[\\/]|\.\.?[\\/]|\/(?!\/))(?:[^\s/\\<>"'`()\[\]{},;:!?@，。！？；：、]+[\\/])+[^\s/\\<>"'`()\[\]{},;:!?@，。！？；：、]+)/g;
+
+export function isFilePathText(value: string): boolean {
+  filePathPattern.lastIndex = 0;
+  const match = filePathPattern.exec(value);
+  return match?.index === 0 && match[1] === "" && match[2].length === value.length;
+}
+
+export function remarkLinkFilePaths() {
+  return (tree: Root): void => {
+    const walk = (node: Parent): void => {
+      if (["link", "linkReference", "image", "html", "inlineCode", "code", "math", "inlineMath"].includes(node.type)) return;
+      const children = node.children as Content[];
+      for (let index = 0; index < children.length; index++) {
+        const child = children[index];
+        if (child.type === "text") {
+          const parts: Content[] = [];
+          let last = 0;
+          filePathPattern.lastIndex = 0;
+          for (const match of child.value.matchAll(filePathPattern)) {
+            const start = match.index + match[1].length;
+            if (match[1] === "@" && start > 1 && !/\s/.test(child.value[start - 2])) continue;
+            if (start > last) parts.push({ type: "text", value: child.value.slice(last, start) });
+            parts.push({ type: "link", url: match[2], children: [{ type: "text", value: match[2] }] });
+            last = start + match[2].length;
+          }
+          if (last) {
+            if (last < child.value.length) parts.push({ type: "text", value: child.value.slice(last) });
+            children.splice(index, 1, ...parts);
+            index += parts.length - 1;
+          }
+        } else if ("children" in child && Array.isArray(child.children)) {
+          walk(child as Parent);
+        }
+      }
+    };
+    walk(tree);
+  };
+}
+
 export const markdownRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
   [remarkFrontmatter, ["yaml"]],
   [remarkGfm, remarkGfmOptions],
@@ -590,9 +634,18 @@ function remarkKeepLineBreaks() {
   return (tree: MarkdownTreeNode) => keepLineBreaks(tree);
 }
 
+export const markdownFileRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
+  ...(markdownRemarkPlugins ?? []),
+  remarkLinkFilePaths,
+];
+
 export const markdownUserRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
   ...(markdownRemarkPlugins ?? []),
   remarkKeepLineBreaks,
+];
+export const markdownUserFileRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
+  ...(markdownUserRemarkPlugins ?? []),
+  remarkLinkFilePaths,
 ];
 export const markdownPreviewRemarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
   [remarkFrontmatter, ["yaml"]],

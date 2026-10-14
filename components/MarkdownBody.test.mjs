@@ -88,6 +88,37 @@ test("keeps local file markdown links in the app", () => {
   assert.doesNotMatch(fileUrlHtml, /target=|rel=|\snode=/);
 });
 
+test("links plain and inline-code file paths in chat, but not external URLs or fenced code", () => {
+  const html = renderMarkdown("见 src/main.ts:12、`./docs/guide.md` 和 /home/me/project/README。 https://example.com/a.ts\n\n```text\nsrc/main.ts\n```", { isStreaming: true });
+  assert.match(html, /<a href="src\/main\.ts:12">src\/main\.ts:12<\/a>/);
+  assert.match(html, /<a href="\.\/docs\/guide\.md"><code class="markdown-inline-code">\.\/docs\/guide\.md<\/code><\/a>/);
+  assert.match(html, /<a href="\/home\/me\/project\/README">\/home\/me\/project\/README<\/a>。/);
+  assert.match(html, /<a href="https:\/\/example\.com\/a\.ts" target="_blank"/);
+  assert.equal((html.match(/href="src\/main\.ts/g) ?? []).length, 1);
+  assert.doesNotMatch(renderMarkdown("src/main.ts", { onOpenFile: undefined }), /<a /);
+});
+
+test("keeps inline code inside explicit links and commands from becoming file links", () => {
+  const explicit = renderMarkdown("[`src/main.ts`](https://example.com/docs)");
+  assert.match(explicit, /<a href="https:\/\/example\.com\/docs"[^>]*><code class="markdown-inline-code">src\/main\.ts<\/code><\/a>/);
+  assert.equal((explicit.match(/<a /g) ?? []).length, 1);
+  for (const command of ["cat src/main.ts", "x = foo.ts"]) {
+    assert.doesNotMatch(renderMarkdown(`\`${command}\``), /<a /);
+  }
+});
+
+test("does not scan a long plain word quadratically for file paths", () => {
+  const start = performance.now();
+  assert.doesNotMatch(renderMarkdown("a".repeat(10000)), /<a /);
+  assert.ok(performance.now() - start < 1000);
+});
+
+test("links a file path after an @ mention without linking email domains", () => {
+  const html = renderMarkdown("@CONTEXT.md and me@example.com");
+  assert.match(html, /@<a href="CONTEXT\.md">CONTEXT\.md<\/a>/);
+  assert.doesNotMatch(html, /href="example\.com"/);
+});
+
 test("keeps file URLs inert without an in-app file handler", () => {
   const html = renderMarkdown("[report](file:///home/me/project/report.html)", { onOpenFile: undefined });
 
@@ -283,7 +314,7 @@ test("keeps CJK prose out of an autolinked URL", () => {
   const html = renderMarkdown("开 http://localhost:4321，或直接开 library/x.png。");
 
   assert.match(html, /<a (?=[^>]*href="http:\/\/localhost:4321")[^>]*>http:\/\/localhost:4321<\/a>/);
-  assert.match(html, /<\/a>，或直接开 library\/x\.png。/);
+  assert.match(html, /<\/a>，或直接开 <a href="library\/x\.png">library\/x\.png<\/a>。/);
   assert.doesNotMatch(html, /%EF%BC%8C/);
 });
 
