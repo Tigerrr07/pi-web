@@ -20,7 +20,7 @@ import { AgentSessionPanel } from "./AgentSessionPanel";
 import { DebugPanel, DebugPanelBoundary } from "./DebugPanel";
 import { SessionChatPanel } from "./SessionChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
-import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
+import { newTerminalTab, restoreTerminalTabs, terminalTabLabels, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { appendSideTab, restoreSideTabs, sideTabsKey } from "./side-tab-state";
 import { useTheme } from "@/hooks/useTheme";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
@@ -578,11 +578,12 @@ export function AppShell() {
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const activeProjectKeyRef = useRef<string | null>(null);
   const [panelTabOrder, setPanelTabOrder] = useState<string[]>([]);
+  const terminalLabels = terminalTabLabels(terminalTabs, (cwd) => getFileName(cwd) || cwd);
   const panelTabs: Tab[] = orderPanelTabs([
     ...fileTabs,
     ...terminalTabs.map((tab) => ({
       id: tab.id,
-      label: getFileName(tab.cwd) || tab.cwd,
+      label: terminalLabels.get(tab.id) ?? tab.cwd,
       filePath: tab.cwd,
       kind: "terminal" as const,
       closing: Boolean(tab.closing),
@@ -1319,6 +1320,18 @@ export function AppShell() {
     setRightPanelOpen(true);
     if (isMobile) setSidebarOpen(false);
   }, [terminalTabs, isMobile]);
+
+  // The tab bar's +: always a new shell, in the active terminal's folder, else
+  // the folder the sidebar's files show (the sidebar's key reuses its tab).
+  const newTerminalCwd = terminalTabs.find((tab) => tab.id === activeFileTabId)?.cwd
+    ?? activeCwd ?? selectedSession?.cwd ?? newSessionCwd ?? null;
+  const handleNewTerminal = useCallback(() => {
+    if (!newTerminalCwd) return;
+    const tab = newTerminalTab(newTerminalCwd);
+    setTerminalTabs((tabs) => [...tabs, tab]);
+    setActiveFileTabId(tab.id);
+    setRightPanelOpen(true);
+  }, [newTerminalCwd]);
 
   // Subagent work opens in a right-panel tab instead of hijacking the main chat.
   const handleOpenSubagentTab = useCallback((sessionId: string, label: string, side?: boolean) => {
@@ -2945,6 +2958,18 @@ export function AppShell() {
               onReorderTab={(source, target, after) => setPanelTabOrder(movePanelTab(panelTabs.map((tab) => tab.id), source, target, after))}
             />
           </div>
+          <button
+            type="button"
+            className="file-panel-expand-button file-panel-new-terminal"
+            onClick={handleNewTerminal}
+            disabled={!newTerminalCwd}
+            title={newTerminalCwd ? translate("terminal.new", { name: getFileName(newTerminalCwd) || newTerminalCwd }) : translate("terminal.newDisabled")}
+            aria-label={newTerminalCwd ? translate("terminal.new", { name: getFileName(newTerminalCwd) || newTerminalCwd }) : translate("terminal.newDisabled")}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
           <button
             type="button"
             className="file-panel-expand-button"

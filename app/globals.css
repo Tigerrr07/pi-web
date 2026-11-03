@@ -2860,9 +2860,13 @@ span.token.table {
   color: var(--text);
   cursor: pointer;
 }
-.file-panel-expand-button:hover,
+.file-panel-expand-button:hover:not(:disabled),
 .file-panel-expand-button[aria-pressed="true"] {
   color: var(--accent);
+}
+.file-panel-expand-button:disabled {
+  color: var(--text-dim);
+  cursor: default;
 }
 .file-panel-expand-button:focus-visible {
   outline: 2px solid var(--accent);
@@ -2919,6 +2923,10 @@ span.token.table {
   .panel-resize-handle,
   .right-panel-overlay-backdrop {
     display: none;
+  }
+  /* The tab bar's new-terminal key stays on phones; only expand hides. */
+  .file-panel-expand-button.file-panel-new-terminal {
+    display: flex;
   }
   .directory-picker-back,
   .directory-picker-entry,

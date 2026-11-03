@@ -826,6 +826,8 @@ export const zhTWLocale: LocalePlugin = {
     "terminal.title": "終端機",
     "terminal.tabLabel": "終端機：{name}",
     "terminal.open": "開啟工作區終端機",
+    "terminal.new": "在 {name} 新增終端機",
+    "terminal.newDisabled": "新增終端機（未選擇資料夾）",
     "terminal.close": "終止終端機",
     "terminal.restart": "重新啟動終端機",
     "terminal.reconnect": "重新連線終端機",

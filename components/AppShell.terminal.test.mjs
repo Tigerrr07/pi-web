@@ -24,3 +24,15 @@ test("storage corruption cannot create invalid or duplicate terminal tabs", () =
   }));
   assert.deepEqual(saved, { tabs: [{ ...tab, restored: true }], activeId: null, open: false });
 });
+
+test("a folder can hold several terminals: restore keeps each, labels number them", async () => {
+  const { terminalTabLabels } = await import("./terminal-tab-state.ts");
+  const first = newTerminalTab("/repo/app");
+  const second = newTerminalTab("/repo/app");
+  const other = newTerminalTab("/repo/lib");
+  const saved = restoreTerminalTabs(JSON.stringify({ tabs: [first, other, second], activeId: second.id, open: true }));
+  assert.deepEqual(saved.tabs.map((tab) => tab.id), [first.id, other.id, second.id]);
+  assert.equal(saved.activeId, second.id);
+  const labels = terminalTabLabels(saved.tabs, (cwd) => cwd.split("/").pop());
+  assert.deepEqual([...labels.values()], ["app", "lib", "app (2)"]);
+});

@@ -19,7 +19,7 @@ export function restoreTerminalTabs(raw: string | null): { tabs: TerminalTab[]; 
     for (const tab of Array.isArray(saved?.tabs) ? saved.tabs : []) {
       if (tab && typeof tab.id === "string" && /^[a-f0-9]{32}$/.test(tab.id)
         && typeof tab.cwd === "string" && tab.cwd.trim()
-        && !tabs.some((existing) => existing.id === tab.id || existing.cwd === tab.cwd)) {
+        && !tabs.some((existing) => existing.id === tab.id)) {
         tabs.push({ id: tab.id, cwd: tab.cwd, restored: true });
       }
     }
@@ -27,4 +27,16 @@ export function restoreTerminalTabs(raw: string | null): { tabs: TerminalTab[]; 
   } catch {
     return { tabs: [], activeId: null, open: false };
   }
+}
+
+/** Tab labels: a folder's name, numbered from its second terminal on ("app (2)"). */
+export function terminalTabLabels(tabs: readonly TerminalTab[], name: (cwd: string) => string): Map<string, string> {
+  const seen = new Map<string, number>();
+  const labels = new Map<string, string>();
+  for (const tab of tabs) {
+    const count = (seen.get(tab.cwd) ?? 0) + 1;
+    seen.set(tab.cwd, count);
+    labels.set(tab.id, count === 1 ? name(tab.cwd) : `${name(tab.cwd)} (${count})`);
+  }
+  return labels;
 }

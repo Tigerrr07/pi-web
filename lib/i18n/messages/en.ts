@@ -826,6 +826,8 @@ export const enLocale: LocalePlugin = {
     "terminal.title": "Terminal",
     "terminal.tabLabel": "Terminal: {name}",
     "terminal.open": "Open workspace terminal",
+    "terminal.new": "New terminal in {name}",
+    "terminal.newDisabled": "New terminal (no folder selected)",
     "terminal.close": "Terminate terminal",
     "terminal.restart": "Restart terminal",
     "terminal.reconnect": "Reconnect terminal",

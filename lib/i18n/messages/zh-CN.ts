@@ -826,6 +826,8 @@ export const zhCNLocale: LocalePlugin = {
     "terminal.title": "终端",
     "terminal.tabLabel": "终端：{name}",
     "terminal.open": "打开工作区终端",
+    "terminal.new": "在 {name} 新建终端",
+    "terminal.newDisabled": "新建终端（未选择文件夹）",
     "terminal.close": "终止终端",
     "terminal.restart": "重启终端",
     "terminal.reconnect": "重新连接终端",
